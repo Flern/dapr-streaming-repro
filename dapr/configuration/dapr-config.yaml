@@ -1,0 +1,37 @@
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: config
+  namespace: default
+spec:
+  mtls:
+    enabled: false
+  tracing:
+    enabled: true
+    samplingRate: "1"
+    expandParams: true
+    includeBody: true
+    zipkin:
+      endpointAddress: "http://kubernetes.docker.internal:5411/api/v2/spans"
+  features:
+  - name: proxy.grpc
+    enabled: true
+  - name: PubSub.Routing
+    enabled: true
+  nameResolution:
+    component: "consul"
+    configuration:
+      client:
+        address: "kubernetes.docker.internal:8500"
+      selfRegister: true
+      advancedRegistration:
+        name: "${APP_ID}"
+        port: ${DAPR_HTTP_PORT}
+        address: "kubernetes.docker.internal"
+        check:
+          name: "Dapr Health Status"
+          checkID: "daprHealth:${APP_ID}"
+          interval: "15s"
+          http: "http://${HOST_ADDRESS}:${DAPR_HTTP_PORT}/v1.0/healthz"
+        meta:
+          DAPR_PORT: "${DAPR_PORT}"

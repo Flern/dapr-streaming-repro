@@ -1,0 +1,149 @@
+version: '3.4'
+
+services:
+
+  consul:
+    image: hashicorp/consul
+    ports:
+      - 8500:8500
+    command: agent -server -bind 0.0.0.0 -client 0.0.0.0 -bootstrap-expect 1 -config-file=/consul/config/config.json
+    volumes:
+      - ./consul-config.json:/consul/config/config.json
+
+  seq:
+    image: datalust/seq:latest
+    environment:
+      - ACCEPT_EULA=Y
+    ports:
+      - "5340:80"
+
+  zipkin:
+    image: openzipkin/zipkin-slim
+    ports:
+      - "5411:9411"
+    restart: unless-stopped
+  
+    
+  ############################
+  # Dapr placement service
+  ############################
+  placement:
+    image: "daprio/dapr:1.15.4"
+    command: ["./placement", "-port", "6050", "-log-level", "debug"]
+    ports:
+      - "6050:6050"
+
+  scheduler:
+    image: daprio/dapr:1.15.4
+    command: ["./scheduler", "--port", "6060", "--etcd-data-dir", "/data", "--log-level", "debug"]
+    ports:
+      - "6060:6060"
+    volumes:
+      - "./dapr/etcd/:/data"
+    user: root
+
+
+  ########################################
+  # GrpcServer
+  ########################################
+  grpc-server:
+    image: grpc-server:latest
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: GrpcServer/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:50220
+      - DAPR_HTTP_PORT=33020
+      - DAPR_GRPC_PORT=32020
+      - SERVER_PORT=50220
+    ports:
+      - "50220:50220"
+      - "50120:50120"
+    extra_hosts:
+      - "kubernetes.docker.internal:host-gateway"
+
+  grpc-server-dapr:
+    image: "daprio/daprd:1.15.4"
+    platform: linux/amd64
+    command: [ "./daprd",
+               "-app-id", "grpc-server",
+               "-app-port", "50220",
+               "-log-level", "debug",
+               "-dapr-http-port", "33020",
+               "-dapr-grpc-port", "32020",
+               "-dapr-internal-grpc-port", "50120",
+               "-placement-host-address", "kubernetes.docker.internal:6050",
+               "-resources-path", "/components",
+               "-config", "/configuration/dapr-config.yaml",
+               "-app-protocol", "h2c"
+    ]
+    depends_on:
+      - zipkin
+      - seq
+      - consul
+      - placement
+      - scheduler
+      - grpc-server
+    network_mode: "service:grpc-server"
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/configuration/:/configuration"
+   
+  ########################################
+  # GrpcClient
+  ########################################
+  grpc-client:
+    image: grpc-client:latestgrpc-client
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: GrpcClient/Dockerfile
+    depends_on:
+      - grpc-server-dapr
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:50221
+      - DAPR_HTTP_PORT=33021
+      - DAPR_GRPC_PORT=32021
+      - SERVER_PORT=50221
+      - STREAM_COUNT=350
+      - STREAM_LIMIT=500
+      - DIRECT_PORT=50220
+      # CHANGE THIS VALUE TO 0 IF LOCALHOST ADDRESSES WORK (I.E., NOT USING DOCKER DESKTOP ON WINDOWS)
+      - USE_DOCKER_ADDRESS=1
+      # CHANGE THIS VALUE TO 0 FOR DIRECT CONNECTION TO GRPC SERVER
+      - USE_DAPR=1
+    ports:
+      - "50221:50221"
+      - "50121:50121"
+    extra_hosts:
+      - "kubernetes.docker.internal:host-gateway"
+
+  grpc-client-dapr:
+    image: "daprio/daprd:1.15.4"
+    platform: linux/amd64
+    command: [ "./daprd",
+               "-app-id", "grpc-client",
+               "-app-port", "50221",
+               "-log-level", "debug",
+               "-dapr-http-port", "33021",
+               "-dapr-grpc-port", "32021",
+               "-dapr-internal-grpc-port", "50121",
+               "-placement-host-address", "kubernetes.docker.internal:6050",
+               "-resources-path", "/components",
+               "-config", "/configuration/dapr-config.yaml",
+               "-app-protocol", "h2c"
+    ]
+    depends_on:
+      - zipkin
+      - seq
+      - consul
+      - placement
+      - scheduler
+      - grpc-client
+    network_mode: "service:grpc-client"
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/configuration/:/configuration"
