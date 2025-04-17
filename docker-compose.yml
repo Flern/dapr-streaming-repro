@@ -63,6 +63,12 @@ services:
       - "50120:50120"
     extra_hosts:
       - "kubernetes.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-O-", "http://localhost:33020/v1.0/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   grpc-server-dapr:
     image: "daprio/daprd:1.15.4"
@@ -101,7 +107,8 @@ services:
       context: .
       dockerfile: GrpcClient/Dockerfile
     depends_on:
-      - grpc-server-dapr
+      grpc-server:
+        condition: service_healthy
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:50221

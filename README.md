@@ -21,3 +21,5 @@ To run the ASP.NET use case:
 View the concurrent connection management behavior either in the client or server logs. <code>grpc-server</code> logs will indicate how many concurrent streams are being served.  The code in <code>grpc-client</code> will also echo the total stream count from the server.
 
 In the dapr-based communication, the concurrent streams are capped at 100, which is the limit of a single HTTP2 connection.  Sidecars are expected to open new HTTP2 connections when the concurrent stream limit is reached, but this does not seem to be occurring.  The expected behavior is seen in the ASP.NET use case, where the (adjustable) total of 350 concurrent streams is successfully opened and maintained.
+
+I personally just tail the <code>grpc-server</code> container log and toggle the <code>USE_DAPR</code> between 0 and 1, running <code>docker-compose up -d</code> to see the different concurrent stream behavior.  It's stable on one PC, I hope others can rerun as easily.  I have not built a local dapr sidecar to try to investigate where the connection cap is occurring.
